@@ -26,7 +26,7 @@ The app is designed to be open source and freely available. Because there is no 
 | Build tool | Vite | Fast builds, simple GitHub Pages deployment |
 | Storage | IndexedDB (via Dexie.js) | Handles 10k+ entries, async, indexed queries |
 | Routing | React Router | Lightweight SPA routing |
-| Romaji conversion | Custom (kunreishiki-first) | Wanakana does not support kunreishiki |
+| Romaji conversion | Custom sub-project (kunreishiki-first, IME-style) | Wanakana does not support kunreishiki; needs live conversion |
 | Virtualized lists | @tanstack/react-virtual | Efficient rendering for large library views |
 | Hosting | GitHub Pages | Free, static, open source friendly |
 | Target | Mobile-first, responsive | Language learners practice on phones |
@@ -69,8 +69,7 @@ Configuration and metadata for a practice session. Only persisted to IndexedDB i
 | id | string (UUID) | Unique identifier |
 | startedAt | timestamp | Session start time |
 | completedAt | timestamp | Session end time |
-| questionCount | number | Number of questions actually completed (not the target — the user may bail out early) |
-| isInfinite | boolean | Whether this was an infinity-mode session (no preset question limit) |
+| questionCount | number | Number of questions actually completed (not the target — the user may bail out early or be in infinity mode) |
 | strictChoonpu | boolean | Grade chōonpu vs vowel kana strictly |
 | strictNasalG | boolean | Grade nasalized G strictly (see note below) |
 | particleSpelling | enum | `"phonetic"` or `"orthographic"` — determines how particle kana are graded |
@@ -180,17 +179,20 @@ Shown after completing or ending a session.
 
 ## Key Technical Decisions
 
-### Romaji-to-Katakana Conversion (Custom)
+### Romaji-to-Katakana Converter (Separate Sub-Project)
 
-We are writing a custom converter because existing libraries (wanakana) do not support kunreishiki romanization. The converter will support kunreishiki as the primary input method, with Hepburn support added later as a fallback option.
+The romaji converter is carved out as its own standalone module (potentially publishable as an npm package) because it has independent scope, its own test suite, and will evolve separately from the main app. It must function as a live IME-style converter — transforming romaji input into katakana in real time as the user types, not just on submission.
+
+Existing libraries (wanakana) do not support kunreishiki romanization, which is the primary input method. Hepburn support will be added later as a fallback option.
 
 **Kunreishiki mappings that differ from Hepburn:** `si`→シ, `ti`→チ, `tu`→ツ, `hu`→フ, `zi`→ジ, `sya`→シャ, `tya`→チャ, `zya`→ジャ, etc.
 
 **Edge cases:**
-- **ン:** Typed as `nn` (two Ns). The converter must distinguish `nn` (→ン) from `n` followed by a vowel (e.g., `na`→ナ)
-- **っ/ッ (gemination):** Typed as a doubled consonant (e.g., `kk` in `kakko`→カッコ)
+- **ン:** Typed as `nn` (two Ns). The converter must distinguish `nn` (→ン) from `n` followed by a vowel (e.g., `na`→ナ). In live mode, a single `n` must remain uncommitted until the next keystroke disambiguates
+- **っ/ッ (gemination):** Typed as a doubled consonant (e.g., `kk` in `kakko`→カッコ). In live mode, the first consonant of a double remains uncommitted until the second arrives
 - **Long vowels:** Standard vowel input; chōonpu (ー) handling is a grading concern, not an input concern
 - **Particles:** No special romaji treatment — particle spelling differences are handled at the grading level via the `particleSpelling` setting
+- **Nasalized G:** No input method currently exists. The converter architecture should be extensible enough to add a convention (e.g., `nga`→カ゚) once one is established
 
 ### IndexedDB via Dexie.js
 
@@ -216,6 +218,8 @@ Correctness is determined by comparing the user's katakana string to the entry's
 - **Nasalized G strictness off:** Nasalized ガ行 variants are treated as equivalent to their non-nasalized forms. (Currently always off due to lack of input method — see note in Session schema.)
 - **Particle spelling:** Determined by the session's `particleSpelling` setting. When set to `"phonetic"`, は in particle position is graded as ワ; when `"orthographic"`, it is graded as ハ. And so on for へ and を.
 
+**Syllable-aligned comparison:** Grading must not be a naive character-by-character string comparison. A single error early in the string (e.g., missing a long vowel) would shift all subsequent characters and cascade into a wall of false negatives. Instead, both the target reading and the user's submission are first syllabified into mora/syllable units following the Japanese CV(V)(C) structure, where the only valid final consonants are ン and the first half of a geminate (ッ). The two syllable arrays are then aligned (using edit distance or a similar sequence alignment algorithm) and compared at the syllable level. This way, a missed ー costs one syllable error rather than corrupting the entire comparison.
+
 The grading rules are determined by the session's settings. Strictness toggles are always visible in session setup — if the user enables strict chōonpu but their imported data doesn't actually use ー, it simply has no effect (all comparisons will be exact matches anyway).
 
 ---
@@ -224,9 +228,9 @@ The grading rules are determined by the session's settings. Strictness toggles a
 
 ### Phase 0: Scaffolding
 
-Set up the Vite + React + MUI project, configure GitHub Pages deployment via GitHub Actions, establish the Dexie.js database schema, implement React Router with the six screen routes, and build the custom kunreishiki-to-katakana converter with tests.
+Set up the Vite + React + MUI project, configure GitHub Pages deployment via GitHub Actions, establish the Dexie.js database schema, and implement React Router with the six screen routes. Separately, begin the romaji-to-katakana converter as its own standalone module with IME-style live conversion and a full test suite.
 
-**Deliverable:** Empty app shell that builds, deploys to GitHub Pages, and has a working romaji converter.
+**Deliverable:** Empty app shell that builds and deploys to GitHub Pages, plus a working kunreishiki IME converter module with tests.
 
 ### Phase 1: Data Pipeline (Import + Library)
 
