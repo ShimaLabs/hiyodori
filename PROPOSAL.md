@@ -26,7 +26,7 @@ The app is designed to be open source and freely available. Because there is no 
 | Build tool | Vite | Fast builds, simple GitHub Pages deployment |
 | Storage | IndexedDB (via Dexie.js) | Handles 10k+ entries, async, indexed queries |
 | Routing | React Router | Lightweight SPA routing |
-| Romaji conversion | Custom sub-project (kunreishiki-first, IME-style) | Wanakana does not support kunreishiki; needs live conversion |
+| Romaji conversion | Wanakana (MVP) behind abstraction layer; custom kunreishiki sub-project post-MVP | Wanakana for speed; abstraction enables swap to kunreishiki later |
 | Virtualized lists | @tanstack/react-virtual | Efficient rendering for large library views |
 | Hosting | GitHub Pages | Free, static, open source friendly |
 | Target | Mobile-first, responsive | Language learners practice on phones |
@@ -47,6 +47,8 @@ Each entry represents a single audio clip linked to a Japanese word or phrase.
 | written | string | no | Written form including kanji (e.g., 科学) |
 | pitch | number | no | Pitch accent number (0 = heiban, 1+ = drop position) |
 | batchId | string | yes | References the ImportBatch this entry belongs to |
+| disabled | boolean | no | If true, this entry is excluded from quiz question pools. Defaults to false |
+| disabledNote | string | no | User-provided reason for disabling (e.g., "audio is clipped", "wrong reading"). Cleared when the entry is re-enabled |
 
 ### ImportBatch
 
@@ -129,6 +131,7 @@ Browse, audit, and manage the full audio library.
 - Play button per row (lazy-loads audio on tap)
 - If audio fails to load: display an error indicator on that entry and play a short error sound (cassette-player-style empty/static sound) to give clear feedback
 - Select individual entries for deletion
+- **Disable/enable entries:** users can disable an entry (with an optional note explaining why, e.g., "audio is clipped" or "wrong reading") to exclude it from quizzes without deleting it. Disabled entries appear visually distinct (greyed out) with the note visible. Re-enabling an entry clears the note
 - Bulk import button (navigates to Import screen)
 - Search/filter by reading or written form
 
@@ -145,7 +148,7 @@ Configure a practice session before starting.
 
 ### 5. Practice
 
-The core interaction loop. Question selection is random from the filtered pool.
+The core interaction loop. Question selection is random from the filtered pool. Disabled entries are excluded from the question pool; if the current entry becomes disabled mid-session (e.g., from another tab), it is skipped and a new question is drawn.
 
 **Layout:**
 - Large, prominent play button (mobile-friendly tap target)
@@ -173,21 +176,22 @@ Shown after completing or ending a session.
 - List of all questions with: target reading, user's answer, certainty, correct/incorrect, replay count
 - Highlight incorrect answers for quick review
 - Play button next to each entry to re-hear the audio
+- **Disable entry:** users can disable any entry directly from the results screen (with an optional note) if they notice an issue during review
 - Button to start another session or return home
 
 ---
 
 ## Key Technical Decisions
 
-### Romaji-to-Katakana Converter (Separate Sub-Project)
+### Romaji-to-Katakana Conversion
 
-The romaji converter is carved out as its own standalone module (potentially publishable as an npm package) because it has independent scope, its own test suite, and will evolve separately from the main app. It must function as a live IME-style converter — transforming romaji input into katakana in real time as the user types, not just on submission.
+**MVP approach:** The MVP uses wanakana for romaji-to-katakana conversion, wrapped behind a `KanaConverter` abstraction layer. This abstraction exposes a simple interface (e.g., `toKatakana(input)`, `bind(element)`, `unbind(element)`) so that no component code depends on wanakana directly. This allows the implementation to be swapped without touching the rest of the codebase.
 
-Existing libraries (wanakana) do not support kunreishiki romanization, which is the primary input method. Hepburn support will be added later as a fallback option.
+**Post-MVP: Custom kunreishiki converter (separate sub-project).** Wanakana does not support kunreishiki romanization, which is the desired primary input method. The custom converter will be carved out as its own standalone module (potentially publishable as an npm package) with its own test suite. It must function as a live IME-style converter — transforming romaji input into katakana in real time as the user types, not just on submission.
 
 **Kunreishiki mappings that differ from Hepburn:** `si`→シ, `ti`→チ, `tu`→ツ, `hu`→フ, `zi`→ジ, `sya`→シャ, `tya`→チャ, `zya`→ジャ, etc.
 
-**Edge cases:**
+**Edge cases for the custom converter:**
 - **ン:** Typed as `nn` (two Ns). The converter must distinguish `nn` (→ン) from `n` followed by a vowel (e.g., `na`→ナ). In live mode, a single `n` must remain uncommitted until the next keystroke disambiguates
 - **っ/ッ (gemination):** Typed as a doubled consonant (e.g., `kk` in `kakko`→カッコ). In live mode, the first consonant of a double remains uncommitted until the second arrives
 - **Long vowels:** Standard vowel input; chōonpu (ー) handling is a grading concern, not an input concern
@@ -228,9 +232,9 @@ The grading rules are determined by the session's settings. Strictness toggles a
 
 ### Phase 0: Scaffolding
 
-Set up the Vite + React + MUI project, configure GitHub Pages deployment via GitHub Actions, establish the Dexie.js database schema, and implement React Router with the six screen routes. Separately, begin the romaji-to-katakana converter as its own standalone module with IME-style live conversion and a full test suite.
+Set up the Vite + React + MUI project, configure GitHub Pages deployment via GitHub Actions, establish the Dexie.js database schema, and implement React Router with the six screen routes. Implement the `KanaConverter` abstraction layer with wanakana as the MVP backend.
 
-**Deliverable:** Empty app shell that builds and deploys to GitHub Pages, plus a working kunreishiki IME converter module with tests.
+**Deliverable:** Empty app shell that builds and deploys to GitHub Pages, with a working romaji-to-katakana input abstraction.
 
 ### Phase 1: Data Pipeline (Import + Library)
 
@@ -258,6 +262,9 @@ Build the all-time stats view: per-kana accuracy breakdowns, most-missed entries
 
 ### Phase 5: Future Enhancements
 
+- Custom kunreishiki romaji converter (standalone sub-project, replaces wanakana via the abstraction layer)
+- Inline entry editing from the Library screen (edit URL, reading, written form, pitch)
+- CSV export of the library for sharing with others
 - Minimal pairs test generation (using answer log data to identify confusable kana pairs)
 - Spaced repetition weighting for question selection
 - Export/import of progress data (for backup or sharing across devices)
