@@ -60,7 +60,7 @@ Metadata about a group of imported entries. Captures source-level phonological p
 | importedAt | timestamp | When the import occurred |
 | choonpuIsDistinct | boolean | Whether the source treats ー as distinct from spelled-out vowel kana (e.g., センセー and センセイ are different words, not interchangeable spellings) |
 | distinguishesNasalG | boolean | Whether the source distinguishes nasalized ガ行 (か゚き゚く゚け゚こ゚) |
-| particleSpelling | enum | `"phonetic"` (は→ワ, へ→エ, を→オ) or `"orthographic"` (は→ハ, へ→ヘ, を→ヲ) |
+| particleSpelling | enum | `"phonetic"` (particles spelled as pronounced: は→ワ, へ→エ, を→オ) or `"orthographic"` (particles spelled as written: は→ハ, へ→ヘ, を→ヲ). This records the source's convention — it does not affect how entries are stored |
 
 ### Session
 
@@ -74,7 +74,7 @@ Configuration and metadata for a practice session. Only persisted to IndexedDB i
 | questionCount | number | Number of questions actually completed (not the target — the user may bail out early or be in infinity mode) |
 | strictChoonpu | boolean | Grade chōonpu vs vowel kana strictly |
 | strictNasalG | boolean | Grade nasalized G strictly (see note below) |
-| particleSpelling | enum | `"phonetic"` or `"orthographic"` — determines how particle kana are graded |
+| strictParticleKana | boolean | When off, treat ハ≡ワ, ヘ≡エ, ヲ≡オ as equivalent (since we cannot detect particle usage without grammatical parsing) |
 | typoCheckEnabled | boolean | Allow resubmission on high-confidence wrong answers |
 | kanaFilter | string[] or null | Selected kana subset, or null for all |
 
@@ -142,7 +142,7 @@ Configure a practice session before starting.
 - Number of questions: numeric input or preset buttons (10, 25, 50, custom), plus an **infinity mode** option (questions keep coming until the user stops)
 - Kana filter: interactive kana table (popup/modal) for selecting which kana rows/columns are in scope. When a filter is active, only entries whose readings are composed entirely of the selected kana will be used
 - **Check availability button**: triggers a count of entries matching the current kana filter and displays the result. This is a manual action rather than a live-updating count, because scanning 10k+ entries on every filter change could freeze the UI
-- Strictness toggles (always visible regardless of which batches have been imported): strict chōonpu, strict nasalized G, particle spelling mode
+- Strictness toggles (always visible regardless of which batches have been imported): strict chōonpu, strict nasalized G, strict particle kana
 - Typo-check toggle: enable the high-confidence resubmission flow
 - Record session toggle: whether to persist answers and session data to IndexedDB
 
@@ -220,7 +220,7 @@ Correctness is determined by comparing the user's katakana string to the entry's
 
 - **Chōonpu strictness off:** ー is treated as equivalent to the corresponding vowel kana (e.g., センセー = センセイ when the long vowel is エ-based). When on, they are distinct.
 - **Nasalized G strictness off:** Nasalized ガ行 variants are treated as equivalent to their non-nasalized forms. (Currently always off due to lack of input method — see note in Session schema.)
-- **Particle spelling:** Determined by the session's `particleSpelling` setting. When set to `"phonetic"`, は in particle position is graded as ワ; when `"orthographic"`, it is graded as ハ. And so on for へ and を.
+- **Particle kana strictness off:** ハ and ワ are treated as equivalent, as are ヘ and エ, and ヲ and オ. This is because without grammatical parsing there is no way to determine whether は, へ, or を are being used as particles within a phrase — so rather than attempting to detect particle usage, we simply treat these pairs as interchangeable when lenient. When strict, they must match exactly.
 
 **Syllable-aligned comparison:** Grading must not be a naive character-by-character string comparison. A single error early in the string (e.g., missing a long vowel) would shift all subsequent characters and cascade into a wall of false negatives. Instead, both the target reading and the user's submission are first syllabified into mora/syllable units following the Japanese CV(V)(C) structure, where the only valid final consonants are ン and the first half of a geminate (ッ). The two syllable arrays are then aligned (using edit distance or a similar sequence alignment algorithm) and compared at the syllable level. This way, a missed ー costs one syllable error rather than corrupting the entire comparison.
 
@@ -250,7 +250,7 @@ Build the Session Setup screen (simplified — question count including infinity
 
 ### Phase 3: Kana Filtering and Strictness
 
-Add the interactive kana table to Session Setup. Implement the kana-based entry filtering with manual availability check. Wire up the strictness toggles (chōonpu, particle spelling) and make them functional in the grading logic. Add Hepburn romanization as a fallback input option.
+Add the interactive kana table to Session Setup. Implement the kana-based entry filtering with manual availability check. Wire up the strictness toggles (chōonpu, particle kana) and make them functional in the grading logic. Add Hepburn romanization as a fallback input option.
 
 **Deliverable:** Users can scope sessions to specific kana and control grading strictness.
 
