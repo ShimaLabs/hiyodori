@@ -59,8 +59,8 @@ Metadata about a group of imported entries. Captures source-level phonological p
 | id | string (UUID) | Unique identifier |
 | importedAt | timestamp | When the import occurred |
 | choonpuIsDistinct | boolean | Whether the source treats ー as distinct from spelled-out vowel kana (e.g., センセー and センセイ are different words, not interchangeable spellings) |
-| distinguishesNasalG | boolean | Whether the source distinguishes nasalized ガ行 (か゚き゚く゚け゚こ゚) |
-| particleSpelling | enum | `"phonetic"` (particles spelled as pronounced: は→ワ, へ→エ, を→オ) or `"orthographic"` (particles spelled as written: は→ハ, へ→ヘ, を→ヲ). This records the source's convention — it does not affect how entries are stored |
+| distinguishesNasalG | boolean | Whether the source distinguishes nasalized ガ行 (カ゚キ゚ク゚ケ゚コ゚) |
+| particleSpelling | enum | `"phonetic"` (particles spelled as pronounced, e.g. コンニチワ) or `"orthographic"` (particles spelled as written, e.g. コンニチハ). This records the source's convention — it does not affect how entries are stored |
 
 ### Session
 
@@ -78,7 +78,7 @@ Configuration and metadata for a practice session. Only persisted to IndexedDB i
 | typoCheckEnabled | boolean | Allow resubmission on high-confidence wrong answers |
 | kanaFilter | string[] or null | Selected kana subset, or null for all |
 
-> **Note on nasalized G:** There is currently no standard romaji input method for typing nasalized ガ行 kana (か゚き゚く゚け゚こ゚). The `distinguishesNasalG` flag is included at the import level for data completeness, but the `strictNasalG` session toggle will be effectively always off until an input method is established. The infrastructure is in place for when a solution is found.
+> **Note on nasalized G:** There is currently no standard romaji input method for typing nasalized ガ行 kana (カ゚キ゚ク゚ケ゚コ゚). The `distinguishesNasalG` flag is included at the import level for data completeness, but the `strictNasalG` session toggle will be effectively always off until an input method is established. The infrastructure is in place for when a solution is found.
 
 ### AnswerLogEntry
 
@@ -113,13 +113,13 @@ If no audio data has been imported yet, the screen should guide the user toward 
 
 ### 2. Import
 
-Where users paste their CSV/TSV data and configure the batch metadata. Accessible from the Library screen.
+Where users upload their CSV/TSV file and configure the batch metadata. Accessible from the Library screen.
 
-- Large text area for pasting CSV/TSV data
+- File upload input (click-to-select) for CSV or TSV files — not a paste textarea, which freezes the browser on large files
 - Expected columns: `reading`, `audio_url`, `written` (optional), `pitch` (optional)
 - Auto-detect delimiter (tab first, fall back to comma)
-- Batch metadata toggles: `choonpuIsDistinct`, `distinguishesNasalG`, `particleSpelling`
-- On submission: parse the data, validate it, and present a combined confirmation screen showing a summary of the parsed entries (count, sample rows) along with any validation warnings (missing required fields, duplicate readings within the batch). The user confirms to commit
+- Batch metadata toggles: `choonpuIsDistinct`, `distinguishesNasalG`, `particleSpelling`. Defaults: both distinction flags **on**, particle spelling **phonetic** — matching the most common real-world source conventions
+- On submission: parse the data, validate it, and present a combined confirmation screen showing a summary of the parsed entries (count, sample rows) along with any validation warnings (missing required fields, functionally duplicate entries within the batch). A duplicate is defined as two entries sharing the same reading **and** the same pitch number (or both lacking a pitch number) — entries with the same reading but different pitch numbers or different written forms are legitimate distinct entries and should not be warned about. The user confirms to commit
 - Progress indicator during the write phase (chunked writes of ~500 entries to avoid UI freezing)
 
 ### 3. Library
@@ -130,10 +130,12 @@ Browse, audit, and manage the full audio library.
 - Each row shows: reading, written form (if present), pitch number (if present), batch info
 - Play button per row (lazy-loads audio on tap)
 - If audio fails to load: display an error indicator on that entry and play a short error sound (cassette-player-style empty/static sound) to give clear feedback
-- Select individual entries for deletion
+- Select individual entries for deletion; header checkbox selects/deselects all entries matching the current search
+- Deletion is chunked (~500 at a time) with a progress bar, and reflected immediately in the in-memory list without a DB round-trip
 - **Disable/enable entries:** users can disable an entry (with an optional note explaining why, e.g., "audio is clipped" or "wrong reading") to exclude it from quizzes without deleting it. Disabled entries appear visually distinct (greyed out) with the note visible. Re-enabling an entry clears the note
 - Bulk import button (navigates to Import screen)
-- Search/filter by reading or written form
+- Search/filter by reading or written form; results sorted by kana reading
+- **Library loading:** entries are loaded from IndexedDB in chunks of ~10k using keyset pagination on a compound `[reading+id]` index, so each chunk is an O(1) seek regardless of position. The list becomes interactive after the first chunk and a progress bar tracks the remainder. **TODO:** avoid loading the full library into memory at all — serve rows directly from IndexedDB to the virtualizer on demand
 
 ### 4. Session Setup
 

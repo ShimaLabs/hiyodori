@@ -16,6 +16,11 @@ export class HiyodoriDB extends Dexie {
       sessions: 'id',
       answerLog: '++id, sessionId, entryId',
     });
+
+    // v2: compound index for efficient keyset pagination in the Library
+    this.version(2).stores({
+      audioEntries: 'id, reading, batchId, disabled, [reading+id]',
+    });
   }
 }
 
